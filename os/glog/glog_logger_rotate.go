@@ -111,11 +111,9 @@ func (l *Logger) rotateChecksTimely() {
 	defer gmlock.Unlock(memoryLockKey)
 
 	var (
-		now        = time.Now()
-		pattern    = "*.log, *.gz"
-		lastFiles_ []string
-		//files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
-		files, _ = gfile.ScanDirFile(l.config.Path, pattern, false)
+		now      = time.Now()
+		pattern  = "*.log, *.gz"
+		files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
 	)
 	intlog.Printf("logging rotation start checks: %+v", files)
 	// =============================================================
