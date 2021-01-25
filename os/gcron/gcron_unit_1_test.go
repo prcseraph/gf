@@ -1,4 +1,4 @@
-// Copyright 2018 gf Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -41,7 +41,7 @@ func TestCron_Add_Close(t *testing.T) {
 		t.Assert(cron.Size(), 3)
 		time.Sleep(1200 * time.Millisecond)
 		t.Assert(array.Len(), 2)
-		time.Sleep(1200 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		t.Assert(array.Len(), 5)
 		cron.Close()
 		time.Sleep(1200 * time.Millisecond)

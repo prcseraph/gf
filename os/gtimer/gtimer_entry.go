@@ -1,4 +1,4 @@
-// Copyright GoFrame Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -14,16 +14,17 @@ import (
 
 // Entry is the timing job entry to wheel.
 type Entry struct {
-	wheel         *wheel      // Belonged wheel.
-	job           JobFunc     // The job function.
-	singleton     *gtype.Bool // Singleton mode.
-	status        *gtype.Int  // Job status.
-	times         *gtype.Int  // Limit running times.
-	create        int64       // Timer ticks when the job installed.
-	interval      int64       // The interval ticks of the job.
-	createMs      int64       // The timestamp in milliseconds when job installed.
-	intervalMs    int64       // The interval milliseconds of the job.
-	rawIntervalMs int64       // Raw input interval in milliseconds.
+	name              string
+	wheel             *wheel      // Belonged wheel.
+	job               JobFunc     // The job function.
+	singleton         *gtype.Bool // Singleton mode.
+	status            *gtype.Int  // Job status.
+	times             *gtype.Int  // Limit running times.
+	intervalTicks     int64       // The interval ticks of the job.
+	createTicks       int64       // Timer ticks when the job installed.
+	createMs          int64       // The timestamp in milliseconds when job installed.
+	intervalMs        int64       // The interval milliseconds of the job.
+	installIntervalMs int64       // Interval when first installation in milliseconds.
 }
 
 // JobFunc is the job function.
@@ -35,54 +36,64 @@ func (w *wheel) addEntry(interval time.Duration, job JobFunc, singleton bool, ti
 		times = defaultTimes
 	}
 	var (
-		ms  = interval.Nanoseconds() / 1e6
-		num = ms / w.intervalMs
+		intervalMs    = interval.Nanoseconds() / 1e6
+		intervalTicks = intervalMs / w.intervalMs
 	)
-	if num == 0 {
+	if intervalTicks == 0 {
 		// If the given interval is lesser than the one of the wheel,
 		// then sets it to one tick, which means it will be run in one interval.
-		num = 1
+		intervalTicks = 1
 	}
-	nowMs := time.Now().UnixNano() / 1e6
-	ticks := w.ticks.Val()
-	entry := &Entry{
-		wheel:         w,
-		job:           job,
-		times:         gtype.NewInt(times),
-		status:        gtype.NewInt(status),
-		create:        ticks,
-		interval:      num,
-		singleton:     gtype.NewBool(singleton),
-		createMs:      nowMs,
-		intervalMs:    ms,
-		rawIntervalMs: ms,
-	}
+	var (
+		nowMs    = time.Now().UnixNano() / 1e6
+		nowTicks = w.ticks.Val()
+		entry    = &Entry{
+			wheel:             w,
+			job:               job,
+			times:             gtype.NewInt(times),
+			status:            gtype.NewInt(status),
+			createTicks:       nowTicks,
+			intervalTicks:     intervalTicks,
+			singleton:         gtype.NewBool(singleton),
+			createMs:          nowMs,
+			intervalMs:        intervalMs,
+			installIntervalMs: intervalMs,
+		}
+	)
 	// Install the job to the list of the slot.
-	w.slots[(ticks+num)%w.number].PushBack(entry)
+	w.slots[(nowTicks+intervalTicks)%w.number].PushBack(entry)
 	return entry
 }
 
 // addEntryByParent adds a timing job with parent entry.
-func (w *wheel) addEntryByParent(interval int64, parent *Entry) *Entry {
-	num := interval / w.intervalMs
-	if num == 0 {
-		num = 1
+// The parameter `rollOn` specifies if just rolling on the entry, which was not met the runnable requirement
+// and not executed previously. This is true often when the job internal is too long.
+func (w *wheel) addEntryByParent(rollOn bool, nowMs, interval int64, parent *Entry) *Entry {
+	intervalTicks := interval / w.intervalMs
+	if intervalTicks == 0 {
+		intervalTicks = 1
 	}
-	nowMs := time.Now().UnixNano() / 1e6
-	ticks := w.ticks.Val()
+	nowTicks := w.ticks.Val()
 	entry := &Entry{
-		wheel:         w,
-		job:           parent.job,
-		times:         parent.times,
-		status:        parent.status,
-		create:        ticks,
-		interval:      num,
-		singleton:     parent.singleton,
-		createMs:      nowMs,
-		intervalMs:    interval,
-		rawIntervalMs: parent.rawIntervalMs,
+		name:              parent.name,
+		wheel:             w,
+		job:               parent.job,
+		times:             parent.times,
+		status:            parent.status,
+		intervalTicks:     intervalTicks,
+		singleton:         parent.singleton,
+		createTicks:       nowTicks,
+		createMs:          nowMs,
+		intervalMs:        interval,
+		installIntervalMs: parent.installIntervalMs,
 	}
-	w.slots[(ticks+num)%w.number].PushBack(entry)
+	if rollOn {
+		entry.createMs = parent.createMs
+		if parent.wheel.level == w.level {
+			entry.createTicks = parent.createTicks
+		}
+	}
+	w.slots[(nowTicks+intervalTicks)%w.number].PushBack(entry)
 	return entry
 }
 
@@ -147,14 +158,17 @@ func (entry *Entry) check(nowTicks int64, nowMs int64) (runnable, addable bool) 
 		return false, true
 	}
 	// Firstly checks using the ticks, this may be low precision as one tick is a little bit long.
-	if diff := nowTicks - entry.create; diff > 0 && diff%entry.interval == 0 {
+	//if entry.name == "1" {
+	//	intlog.Print("check:", nowTicks-entry.createTicks, nowTicks, entry.createTicks, entry.intervalTicks)
+	//}
+	if diff := nowTicks - entry.createTicks; diff > 0 && diff%entry.intervalTicks == 0 {
 		// If not the lowest level wheel.
 		if entry.wheel.level > 0 {
 			diffMs := nowMs - entry.createMs
 			switch {
 			// Add it to the next slot, which means it will run on next interval.
 			case diffMs < entry.wheel.timer.intervalMs:
-				entry.wheel.slots[(nowTicks+entry.interval)%entry.wheel.number].PushBack(entry)
+				entry.wheel.slots[(nowTicks+entry.intervalTicks)%entry.wheel.number].PushBack(entry)
 				return false, false
 
 			// Normal rolls on the job.
@@ -163,7 +177,7 @@ func (entry *Entry) check(nowTicks int64, nowMs int64) (runnable, addable bool) 
 				// if it is greater than the minimum interval, then re-install it.
 				if leftMs := entry.intervalMs - diffMs; leftMs > entry.wheel.timer.intervalMs {
 					// Re-calculate and re-installs the job proper slot.
-					entry.wheel.timer.doAddEntryByParent(leftMs, entry)
+					entry.wheel.timer.doAddEntryByParent(false, nowMs, leftMs, entry)
 					return false, false
 				}
 			}
@@ -188,6 +202,9 @@ func (entry *Entry) check(nowTicks int64, nowMs int64) (runnable, addable bool) 
 		if times < 2000000000 && times > 1000000000 {
 			entry.times.Set(defaultTimes)
 		}
+		//if entry.name == "1" {
+		//	intlog.Print("runnable:", nowTicks-entry.createTicks, nowTicks, entry.createTicks, entry.createTicks, entry.interval)
+		//}
 		return true, true
 	}
 	return false, true

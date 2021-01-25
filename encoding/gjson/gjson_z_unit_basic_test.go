@@ -1,4 +1,4 @@
-// Copyright 2017 gf Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -466,7 +466,20 @@ func Test_Basic(t *testing.T) {
 	})
 }
 
-func Test_IsNil(t *testing.T) {
+func TestJson_Var(t *testing.T) {
+	gtest.C(t, func(t *gtest.T) {
+		data := []byte("[9223372036854775807, 9223372036854775806]")
+		array := gjson.New(data).Var().Array()
+		t.Assert(array, []uint64{9223372036854776000, 9223372036854776000})
+	})
+	gtest.C(t, func(t *gtest.T) {
+		data := []byte("[9223372036854775807, 9223372036854775806]")
+		array := gjson.NewWithOption(data, gjson.Option{StrNumber: true}).Var().Array()
+		t.Assert(array, []uint64{9223372036854775807, 9223372036854775806})
+	})
+}
+
+func TestJson_IsNil(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		j := gjson.New(nil)
 		t.Assert(j.IsNil(), true)

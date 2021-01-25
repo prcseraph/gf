@@ -1,4 +1,4 @@
-// Copyright 2020 gf Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -46,6 +46,11 @@ func Test_Struct_UnmarshalValue1(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		st := &MyTimeSt{}
 		err := gconv.Struct(g.Map{"ServiceDate": nil}, st)
+		t.AssertNE(err, nil)
+	})
+	gtest.C(t, func(t *gtest.T) {
+		st := &MyTimeSt{}
+		err := gconv.Struct(g.Map{"ServiceDate": "error"}, st)
 		t.AssertNE(err, nil)
 	})
 }

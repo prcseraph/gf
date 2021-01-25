@@ -1,4 +1,4 @@
-// Copyright GoFrame Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -31,11 +31,11 @@ func TestSetTimeout(t *testing.T) {
 func TestSetInterval(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		array := garray.New(true)
-		gtimer.SetInterval(200*time.Millisecond, func() {
+		gtimer.SetInterval(300*time.Millisecond, func() {
 			array.Append(1)
 		})
-		time.Sleep(1100 * time.Millisecond)
-		t.Assert(array.Len(), 5)
+		time.Sleep(1000 * time.Millisecond)
+		t.Assert(array.Len(), 3)
 	})
 }
 
@@ -76,12 +76,12 @@ func TestAddTimes(t *testing.T) {
 func TestDelayAdd(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		array := garray.New(true)
-		gtimer.DelayAdd(200*time.Millisecond, 200*time.Millisecond, func() {
+		gtimer.DelayAdd(500*time.Millisecond, 500*time.Millisecond, func() {
 			array.Append(1)
 		})
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond)
 		t.Assert(array.Len(), 0)
-		time.Sleep(200 * time.Millisecond)
+		time.Sleep(600 * time.Millisecond)
 		t.Assert(array.Len(), 1)
 	})
 }
@@ -102,7 +102,7 @@ func TestDelayAddEntry(t *testing.T) {
 func TestDelayAddSingleton(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		array := garray.New(true)
-		gtimer.DelayAddSingleton(200*time.Millisecond, 200*time.Millisecond, func() {
+		gtimer.DelayAddSingleton(500*time.Millisecond, 500*time.Millisecond, func() {
 			array.Append(1)
 			time.Sleep(10000 * time.Millisecond)
 		})
@@ -129,12 +129,12 @@ func TestDelayAddOnce(t *testing.T) {
 func TestDelayAddTimes(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		array := garray.New(true)
-		gtimer.DelayAddTimes(200*time.Millisecond, 200*time.Millisecond, 2, func() {
+		gtimer.DelayAddTimes(500*time.Millisecond, 500*time.Millisecond, 2, func() {
 			array.Append(1)
 		})
 		time.Sleep(300 * time.Millisecond)
 		t.Assert(array.Len(), 0)
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(1500 * time.Millisecond)
 		t.Assert(array.Len(), 2)
 	})
 }

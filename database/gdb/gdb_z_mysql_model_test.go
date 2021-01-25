@@ -642,6 +642,65 @@ func Test_Model_All(t *testing.T) {
 	})
 }
 
+func Test_Model_Fields(t *testing.T) {
+	tableName1 := createInitTable()
+	defer dropTable(tableName1)
+
+	tableName2 := "user_" + gtime.Now().TimestampNanoStr()
+	if _, err := db.Exec(fmt.Sprintf(`
+	    CREATE TABLE %s (
+	        id         int(10) unsigned NOT NULL AUTO_INCREMENT,
+	        name       varchar(45) NULL,
+			age        int(10) unsigned,
+	        PRIMARY KEY (id)
+	    ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+	    `, tableName2,
+	)); err != nil {
+		gtest.Assert(err, nil)
+	}
+	defer dropTable(tableName2)
+
+	r, err := db.Insert(tableName2, g.Map{
+		"id":   1,
+		"name": "table2_1",
+		"age":  18,
+	})
+	gtest.Assert(err, nil)
+	n, _ := r.RowsAffected()
+	gtest.Assert(n, 1)
+
+	gtest.C(t, func(t *gtest.T) {
+		all, err := db.Table(tableName1).As("u").Fields("u.passport,u.id").Where("u.id<2").All()
+		t.Assert(err, nil)
+		t.Assert(len(all), 1)
+		t.Assert(len(all[0]), 2)
+	})
+	gtest.C(t, func(t *gtest.T) {
+		all, err := db.Table(tableName1).As("u1").
+			LeftJoin(tableName1, "u2", "u2.id=u1.id").
+			Fields("u1.passport,u1.id,u2.id AS u2id").
+			Where("u1.id<2").
+			All()
+		t.Assert(err, nil)
+		t.Assert(len(all), 1)
+		t.Assert(len(all[0]), 3)
+	})
+	gtest.C(t, func(t *gtest.T) {
+		all, err := db.Table(tableName1).As("u1").
+			LeftJoin(tableName2, "u2", "u2.id=u1.id").
+			Fields("u1.passport,u1.id,u2.name,u2.age").
+			Where("u1.id<2").
+			All()
+		t.Assert(err, nil)
+		t.Assert(len(all), 1)
+		t.Assert(len(all[0]), 4)
+		t.Assert(all[0]["id"], 1)
+		t.Assert(all[0]["age"], 18)
+		t.Assert(all[0]["name"], "table2_1")
+		t.Assert(all[0]["passport"], "user_1")
+	})
+}
+
 func Test_Model_FindAll(t *testing.T) {
 	table := createInitTable()
 	defer dropTable(table)
@@ -980,6 +1039,18 @@ func Test_Model_Struct(t *testing.T) {
 		user := new(User)
 		err := db.Table(table).Where("id=-1").Struct(user)
 		t.Assert(err, sql.ErrNoRows)
+	})
+	gtest.C(t, func(t *gtest.T) {
+		type User struct {
+			Id         int
+			Passport   string
+			Password   string
+			NickName   string
+			CreateTime *gtime.Time
+		}
+		var user *User
+		err := db.Table(table).Where("id=-1").Struct(&user)
+		t.Assert(err, nil)
 	})
 }
 
@@ -2135,6 +2206,27 @@ func Test_Model_Option_List(t *testing.T) {
 	})
 }
 
+func Test_Model_OmitEmpty(t *testing.T) {
+	gtest.C(t, func(t *gtest.T) {
+		table := fmt.Sprintf(`table_%s`, gtime.TimestampNanoStr())
+		if _, err := db.Exec(fmt.Sprintf(`
+    CREATE TABLE IF NOT EXISTS %s (
+        id int(10) unsigned NOT NULL AUTO_INCREMENT,
+        name varchar(45) NOT NULL,
+        PRIMARY KEY (id)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+    `, table)); err != nil {
+			gtest.Error(err)
+		}
+		defer dropTable(table)
+		_, err := db.Table(table).OmitEmpty().Data(g.Map{
+			"id":   1,
+			"name": "",
+		}).Save()
+		t.AssertNE(err, nil)
+	})
+}
+
 func Test_Model_Option_Where(t *testing.T) {
 	gtest.C(t, func(t *gtest.T) {
 		table := createInitTable()
@@ -3142,5 +3234,90 @@ func Test_Model_Fields_Map_Struct(t *testing.T) {
 		t.Assert(a.ID, 1)
 		t.Assert(a.PASSPORT, "user_1")
 		t.Assert(a.XXX_TYPE, 0)
+	})
+}
+
+func Test_Model_Fields_AutoFilterInJoinStatement(t *testing.T) {
+	gtest.C(t, func(t *gtest.T) {
+		var err error
+		table1 := "user"
+		table2 := "score"
+		table3 := "info"
+		if _, err := db.Exec(fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+		   id int(11) NOT NULL AUTO_INCREMENT,
+		   name varchar(500) NOT NULL DEFAULT '',
+		 PRIMARY KEY (id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8 AUTO_INCREMENT=1;
+	    `, table1,
+		)); err != nil {
+			t.Assert(err, nil)
+		}
+		defer dropTable(table1)
+		_, err = db.Table(table1).Insert(g.Map{
+			"id":   1,
+			"name": "john",
+		})
+		t.Assert(err, nil)
+
+		if _, err := db.Exec(fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id int(11) NOT NULL AUTO_INCREMENT,
+			user_id int(11) NOT NULL DEFAULT 0,
+		    number varchar(500) NOT NULL DEFAULT '',
+		 PRIMARY KEY (id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8 AUTO_INCREMENT=1;
+	    `, table2,
+		)); err != nil {
+			t.Assert(err, nil)
+		}
+		defer dropTable(table2)
+		_, err = db.Table(table2).Insert(g.Map{
+			"id":      1,
+			"user_id": 1,
+			"number":  "n",
+		})
+		t.Assert(err, nil)
+
+		if _, err := db.Exec(fmt.Sprintf(`
+		CREATE TABLE IF NOT EXISTS %s (
+			id int(11) NOT NULL AUTO_INCREMENT,
+			user_id int(11) NOT NULL DEFAULT 0,
+		    description varchar(500) NOT NULL DEFAULT '',
+		 PRIMARY KEY (id)
+		) ENGINE=InnoDB DEFAULT CHARSET=utf8 AUTO_INCREMENT=1;
+	    `, table3,
+		)); err != nil {
+			t.Assert(err, nil)
+		}
+		defer dropTable(table3)
+		_, err = db.Table(table3).Insert(g.Map{
+			"id":          1,
+			"user_id":     1,
+			"description": "brief",
+		})
+		t.Assert(err, nil)
+
+		one, err := db.Table("user").
+			Where("user.id", 1).
+			Fields("score.number,user.name").
+			LeftJoin("score", "user.id=score.user_id").
+			LeftJoin("info", "info.id=info.user_id").
+			Order("user.id asc").
+			One()
+		t.Assert(err, nil)
+		t.Assert(len(one), 2)
+		t.Assert(one["name"].String(), "john")
+		t.Assert(one["number"].String(), "n")
+
+		one, err = db.Table("user").
+			LeftJoin("score", "user.id=score.user_id").
+			LeftJoin("info", "info.id=info.user_id").
+			Fields("score.number,user.name").
+			One()
+		t.Assert(err, nil)
+		t.Assert(len(one), 2)
+		t.Assert(one["name"].String(), "john")
+		t.Assert(one["number"].String(), "n")
 	})
 }

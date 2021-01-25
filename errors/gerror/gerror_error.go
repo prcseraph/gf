@@ -1,4 +1,4 @@
-// Copyright GoFrame Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -167,6 +167,12 @@ func (err *Error) Next() error {
 		return nil
 	}
 	return err.error
+}
+
+// MarshalJSON implements the interface MarshalJSON for json.Marshal.
+// Note that do not use pointer as its receiver here.
+func (err *Error) MarshalJSON() ([]byte, error) {
+	return []byte(`"` + err.Error() + `"`), nil
 }
 
 // formatSubStack formats the stack for error.

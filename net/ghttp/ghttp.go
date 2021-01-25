@@ -1,4 +1,4 @@
-// Copyright GoFrame Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -117,7 +117,7 @@ const (
 	HookAfterOutput       = "HOOK_AFTER_OUTPUT"
 	ServerStatusStopped   = 0
 	ServerStatusRunning   = 1
-	SupportedHttpMethods  = "GET,PUT,POST,DELETE,PATCH,HEAD,CONNECT,OPTIONS,TRACE"
+	supportedHttpMethods  = "GET,PUT,POST,DELETE,PATCH,HEAD,CONNECT,OPTIONS,TRACE"
 	defaultServerName     = "default"
 	defaultDomainName     = "default"
 	defaultMethod         = "ALL"

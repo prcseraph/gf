@@ -1,4 +1,4 @@
-// Copyright GoFrame Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -11,6 +11,7 @@ import (
 	"github.com/gogf/gf/container/gmap"
 	"github.com/gogf/gf/encoding/gparser"
 	"github.com/gogf/gf/errors/gerror"
+	"github.com/gogf/gf/internal/empty"
 	"github.com/gogf/gf/util/gconv"
 	"reflect"
 )
@@ -48,7 +49,10 @@ func (r Record) GMap() *gmap.StrAnyMap {
 func (r Record) Struct(pointer interface{}) error {
 	// If the record is empty, it returns error.
 	if r.IsEmpty() {
-		return sql.ErrNoRows
+		if !empty.IsNil(pointer, true) {
+			return sql.ErrNoRows
+		}
+		return nil
 	}
 	// Special handling for parameter type: reflect.Value
 	if _, ok := pointer.(reflect.Value); ok {

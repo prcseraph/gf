@@ -1,4 +1,4 @@
-// Copyright 2018 gf Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://goframe.org). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -758,16 +758,16 @@ func TestIntArray_UnmarshalValue(t *testing.T) {
 		t.Assert(v.Array.Slice(), g.Slice{1, 2, 3})
 	})
 	// Map
-	gtest.C(t, func(t *gtest.T) {
-		var v *V
-		err := gconv.Struct(g.Map{
-			"name":  "john",
-			"array": g.Slice{1, 2, 3},
-		}, &v)
-		t.Assert(err, nil)
-		t.Assert(v.Name, "john")
-		t.Assert(v.Array.Slice(), g.Slice{1, 2, 3})
-	})
+	//gtest.C(t, func(t *gtest.T) {
+	//	var v *V
+	//	err := gconv.Struct(g.Map{
+	//		"name":  "john",
+	//		"array": g.Slice{1, 2, 3},
+	//	}, &v)
+	//	t.Assert(err, nil)
+	//	t.Assert(v.Name, "john")
+	//	t.Assert(v.Array.Slice(), g.Slice{1, 2, 3})
+	//})
 }
 
 func TestIntArray_FilterEmpty(t *testing.T) {

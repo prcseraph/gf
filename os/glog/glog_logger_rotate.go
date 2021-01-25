@@ -1,4 +1,4 @@
-// Copyright 2020 gf Author(https://github.com/gogf/gf). All Rights Reserved.
+// Copyright GoFrame Author(https://github.com/gogf/gf). All Rights Reserved.
 //
 // This Source Code Form is subject to the terms of the MIT License.
 // If a copy of the MIT was not distributed with this file,
@@ -36,6 +36,12 @@ func (l *Logger) rotateFileBySize(now time.Time) error {
 
 // doRotateFile rotates the given logging file.
 func (l *Logger) doRotateFile(filePath string) error {
+	memoryLockKey := "glog.doRotateFile:" + filePath
+	if !gmlock.TryLock(memoryLockKey) {
+		return nil
+	}
+	defer gmlock.Unlock(memoryLockKey)
+
 	// No backups, it then just removes the current logging file.
 	if l.config.RotateBackupLimit == 0 {
 		if err := gfile.Remove(filePath); err != nil {
@@ -59,8 +65,12 @@ func (l *Logger) doRotateFile(filePath string) error {
 			now   = gtime.Now()
 			micro = now.Microsecond() % 1000
 		)
-		for micro < 100 {
-			micro *= 10
+		if micro == 0 {
+			micro = 101
+		} else {
+			for micro < 100 {
+				micro *= 10
+			}
 		}
 		newFilePath = gfile.Join(
 			dirPath,
@@ -113,8 +123,9 @@ func (l *Logger) rotateChecksTimely() {
 	// =============================================================
 	if l.config.RotateExpire > 0 {
 		var (
-			mtime       time.Time
-			subDuration time.Duration
+			mtime         time.Time
+			subDuration   time.Duration
+			expireRotated bool
 		)
 		for _, file := range files {
 			if gfile.ExtName(file) == "gz" {
@@ -123,20 +134,20 @@ func (l *Logger) rotateChecksTimely() {
 			mtime = gfile.MTime(file)
 			subDuration = now.Sub(mtime)
 			if subDuration > l.config.RotateExpire {
+				expireRotated = true
 				intlog.Printf(
 					`%v - %v = %v > %v, rotation expire logging file: %s`,
 					now, mtime, subDuration, l.config.RotateExpire, file,
 				)
-				if err := gfile.Remove(file); err != nil {
-					intlog.Print(err)
-					lastFiles_ = append(lastFiles_, file)
+				if err := l.doRotateFile(file); err != nil {
+					intlog.Error(err)
 				}
-			} else {
-				lastFiles_ = append(lastFiles_, file)
 			}
 		}
-		files = lastFiles_[:]
-		lastFiles_ = lastFiles_[0:0]
+		if expireRotated {
+			// Update the files array.
+			files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
+		}
 	}
 
 	// =============================================================
@@ -153,8 +164,6 @@ func (l *Logger) rotateChecksTimely() {
 			// access.20200326101301899002.log
 			if gregex.IsMatchString(`.+\.\d{20}\.log`, gfile.Basename(file)) {
 				needCompressFileArray.Append(file)
-			} else {
-				lastFiles_ = append(lastFiles_, file)
 			}
 		}
 		if needCompressFileArray.Len() > 0 {
@@ -164,16 +173,15 @@ func (l *Logger) rotateChecksTimely() {
 					intlog.Printf(`compressed done, remove original logging file: %s`, path)
 					if err = gfile.Remove(path); err != nil {
 						intlog.Print(err)
-						lastFiles_ = append(lastFiles_, path)
 					}
 				} else {
 					intlog.Print(err)
 				}
 				return true
 			})
+			// Update the files array.
+			files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
 		}
-		files = lastFiles_[:]
-		lastFiles_ = lastFiles_[0:0]
 	}
 
 	// =============================================================
