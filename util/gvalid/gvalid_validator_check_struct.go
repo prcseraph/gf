@@ -9,6 +9,7 @@ package gvalid
 import (
 	"github.com/gogf/gf/internal/structs"
 	"github.com/gogf/gf/util/gconv"
+	"reflect"
 	"strings"
 )
 
@@ -17,14 +18,32 @@ var (
 	aliasNameTagPriority = []string{"param", "params", "p"} // aliasNameTagPriority specifies the alias tag priority array.
 )
 
-// CheckStruct validates strcut and returns the error result.
+// CheckStruct validates struct and returns the error result.
 //
 // The parameter <object> should be type of struct/*struct.
 // The parameter <rules> can be type of []string/map[string]string. It supports sequence in error result
 // if <rules> is type of []string.
 // The optional parameter <messages> specifies the custom error messages for specified keys and rules.
 func (v *Validator) CheckStruct(object interface{}, rules interface{}, messages ...CustomMsg) *Error {
-	// It here must use structs.TagFields not structs.MapField to ensure error sequence.
+	var (
+		errorMaps = make(ErrorMap) // Returned error.
+	)
+	mapField, err := structs.FieldMap(object, aliasNameTagPriority)
+	if err != nil {
+		return newErrorStr("invalid_object", err.Error())
+	}
+	// It checks the struct recursively the its attribute is also a struct.
+	for _, field := range mapField {
+		if field.OriginalKind() == reflect.Struct {
+			if err := v.CheckStruct(field.Value, rules, messages...); err != nil {
+				// It merges the errors into single error map.
+				for k, m := range err.errors {
+					errorMaps[k] = m
+				}
+			}
+		}
+	}
+	// It here must use structs.TagFields not structs.FieldMap to ensure error sequence.
 	tagField, err := structs.TagFields(object, structTagPriority)
 	if err != nil {
 		return newErrorStr("invalid_object", err.Error())
@@ -39,7 +58,6 @@ func (v *Validator) CheckStruct(object interface{}, rules interface{}, messages 
 		customMessage = make(CustomMsg)
 		fieldAliases  = make(map[string]string) // Alias names for <messages> overwriting struct tag names.
 		errorRules    = make([]string, 0)       // Sequence rules.
-		errorMaps     = make(ErrorMap)          // Returned error
 	)
 	switch v := rules.(type) {
 	// Sequence tag: []sequence tag
@@ -85,13 +103,9 @@ func (v *Validator) CheckStruct(object interface{}, rules interface{}, messages 
 		return nil
 	}
 	// Checks and extends the parameters map with struct alias tag.
-	mapField, err := structs.MapField(object, aliasNameTagPriority)
-	if err != nil {
-		return newErrorStr("invalid_object", err.Error())
-	}
 	for nameOrTag, field := range mapField {
-		params[nameOrTag] = field.Value()
-		params[field.Name()] = field.Value()
+		params[nameOrTag] = field.Value.Interface()
+		params[field.Name()] = field.Value.Interface()
 	}
 	for _, field := range tagField {
 		fieldName := field.Name()
@@ -105,7 +119,7 @@ func (v *Validator) CheckStruct(object interface{}, rules interface{}, messages 
 		}
 		// It here extends the params map using alias names.
 		if _, ok := params[name]; !ok {
-			params[name] = field.Value()
+			params[name] = field.Value.Interface()
 		}
 		if _, ok := checkRules[name]; !ok {
 			if _, ok := checkRules[fieldName]; ok {
@@ -167,10 +181,10 @@ func (v *Validator) CheckStruct(object interface{}, rules interface{}, messages 
 		// It checks each rule and its value in loop.
 		if e := v.doCheck(key, value, rule, customMessage[key], params); e != nil {
 			_, item := e.FirstItem()
-			// ===========================================================
-			// Only in map and struct validations, if value is nil or empty
-			// string and has no required* rules, it clears the error message.
-			// ===========================================================
+			// ===================================================================
+			// Only in map and struct validations, if value is nil or empty string
+			// and has no required* rules, it clears the error message.
+			// ===================================================================
 			if value == nil || gconv.String(value) == "" {
 				required := false
 				// rule => error

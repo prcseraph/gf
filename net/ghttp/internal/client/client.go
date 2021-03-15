@@ -8,13 +8,17 @@ package client
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
 	"fmt"
 	"github.com/gogf/gf"
+	"github.com/gogf/gf/errors/gerror"
+	"github.com/gogf/gf/os/gfile"
 	"github.com/gogf/gf/text/gstr"
 	"golang.org/x/net/proxy"
 	"net"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"strings"
 	"time"
@@ -27,14 +31,12 @@ type Client struct {
 	http.Client                         // Underlying HTTP Client.
 	ctx               context.Context   // Context for each request.
 	dump              bool              // Mark this request will be dumped.
-	agent             string            // Client agent.
 	parent            *Client           // Parent http client, this is used for chaining operations.
 	header            map[string]string // Custom header map.
 	cookies           map[string]string // Custom cookie map.
 	prefix            string            // Prefix for request.
 	authUser          string            // HTTP basic authentication: user.
 	authPass          string            // HTTP basic authentication: pass.
-	browserMode       bool              // Whether auto saving and sending cookie content.
 	retryCount        int               // Retry count when request fails.
 	retryInterval     time.Duration     // Retry interval when request fails.
 	middlewareHandler []HandlerFunc     // Interceptor handlers
@@ -46,7 +48,7 @@ var (
 
 // New creates and returns a new HTTP client object.
 func New() *Client {
-	return &Client{
+	client := &Client{
 		Client: http.Client{
 			Transport: &http.Transport{
 				// No validation for https certification of the server in default.
@@ -58,11 +60,12 @@ func New() *Client {
 		},
 		header:  make(map[string]string),
 		cookies: make(map[string]string),
-		agent:   defaultClientAgent,
 	}
+	client.header["User-Agent"] = defaultClientAgent
+	return client
 }
 
-// Clone clones current client and returns a new one.
+// Clone deeply clones current client and returns a new one.
 func (c *Client) Clone() *Client {
 	newClient := New()
 	*newClient = *c
@@ -81,7 +84,10 @@ func (c *Client) Clone() *Client {
 // When browser mode is enabled, it automatically saves and sends cookie content
 // from and to server.
 func (c *Client) SetBrowserMode(enabled bool) *Client {
-	c.browserMode = enabled
+	if enabled {
+		jar, _ := cookiejar.New(nil)
+		c.Jar = jar
+	}
 	return c
 }
 
@@ -198,8 +204,8 @@ func (c *Client) SetProxy(proxyURL string) {
 		return
 	}
 	if _proxy.Scheme == "http" {
-		if _, ok := c.Transport.(*http.Transport); ok {
-			c.Transport.(*http.Transport).Proxy = http.ProxyURL(_proxy)
+		if v, ok := c.Transport.(*http.Transport); ok {
+			v.Proxy = http.ProxyURL(_proxy)
 		}
 	} else {
 		var auth = &proxy.Auth{}
@@ -227,11 +233,55 @@ func (c *Client) SetProxy(proxyURL string) {
 		if err != nil {
 			return
 		}
-		if _, ok := c.Transport.(*http.Transport); ok {
-			c.Transport.(*http.Transport).DialContext = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
+		if v, ok := c.Transport.(*http.Transport); ok {
+			v.DialContext = func(ctx context.Context, network, addr string) (conn net.Conn, e error) {
 				return dialer.Dial(network, addr)
 			}
 		}
 		//c.SetTimeout(10*time.Second)
 	}
+}
+
+// SetTlsKeyCrt sets the certificate and key file for TLS configuration of client.
+func (c *Client) SetTLSKeyCrt(crtFile, keyFile string) error {
+	tlsConfig, err := LoadKeyCrt(crtFile, keyFile)
+	if err != nil {
+		return err
+	}
+	if v, ok := c.Transport.(*http.Transport); ok {
+		tlsConfig.InsecureSkipVerify = true
+		v.TLSClientConfig = tlsConfig
+		return nil
+	}
+	return gerror.New(`cannot set TLSClientConfig for custom Transport of the client`)
+}
+
+// SetTlsConfig sets the TLS configuration of client.
+func (c *Client) SetTLSConfig(tlsConfig *tls.Config) error {
+	if v, ok := c.Transport.(*http.Transport); ok {
+		v.TLSClientConfig = tlsConfig
+		return nil
+	}
+	return gerror.New(`cannot set TLSClientConfig for custom Transport of the client`)
+}
+
+// LoadKeyCrt creates and returns a TLS configuration object with given certificate and key files.
+func LoadKeyCrt(crtFile, keyFile string) (*tls.Config, error) {
+	crtPath, err := gfile.Search(crtFile)
+	if err != nil {
+		return nil, err
+	}
+	keyPath, err := gfile.Search(keyFile)
+	if err != nil {
+		return nil, err
+	}
+	crt, err := tls.LoadX509KeyPair(crtPath, keyPath)
+	if err != nil {
+		return nil, err
+	}
+	tlsConfig := &tls.Config{}
+	tlsConfig.Certificates = []tls.Certificate{crt}
+	tlsConfig.Time = time.Now
+	tlsConfig.Rand = rand.Reader
+	return tlsConfig, nil
 }

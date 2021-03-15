@@ -25,8 +25,11 @@ type Response struct {
 func (r *Response) initCookie() {
 	if r.cookies == nil {
 		r.cookies = make(map[string]string)
-		for _, v := range r.Cookies() {
-			r.cookies[v.Name] = v.Value
+		// Response might be nil.
+		if r != nil && r.Response != nil {
+			for _, v := range r.Cookies() {
+				r.cookies[v.Name] = v.Value
+			}
 		}
 	}
 }
@@ -49,6 +52,10 @@ func (r *Response) GetCookieMap() map[string]string {
 
 // ReadAll retrieves and returns the response content as []byte.
 func (r *Response) ReadAll() []byte {
+	// Response might be nil.
+	if r == nil || r.Response == nil {
+		return []byte{}
+	}
 	body, err := ioutil.ReadAll(r.Response.Body)
 	if err != nil {
 		return nil

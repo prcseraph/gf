@@ -40,7 +40,7 @@ type Config struct {
 }
 
 var (
-	supportedFileTypes = []string{"toml", "yaml", "json", "ini", "xml"}
+	supportedFileTypes = []string{"toml", "yaml", "yml", "json", "ini", "xml"}
 	resourceTryFiles   = []string{"", "/", "config/", "config", "/config", "/config/"}
 )
 
@@ -52,7 +52,7 @@ func New(file ...string) *Config {
 		name = file[0]
 	} else {
 		// Custom default configuration file name from command line or environment.
-		if customFile := gcmd.GetWithEnv(fmt.Sprintf("%s.file", cmdEnvKey)).String(); customFile != "" {
+		if customFile := gcmd.GetOptWithEnv(fmt.Sprintf("%s.file", cmdEnvKey)).String(); customFile != "" {
 			name = customFile
 		}
 	}
@@ -62,7 +62,7 @@ func New(file ...string) *Config {
 		jsonMap:     gmap.NewStrAnyMap(true),
 	}
 	// Customized dir path from env/cmd.
-	if customPath := gcmd.GetWithEnv(fmt.Sprintf("%s.path", cmdEnvKey)).String(); customPath != "" {
+	if customPath := gcmd.GetOptWithEnv(fmt.Sprintf("%s.path", cmdEnvKey)).String(); customPath != "" {
 		if gfile.Exists(customPath) {
 			_ = c.SetPath(customPath)
 		} else {
@@ -71,31 +71,26 @@ func New(file ...string) *Config {
 			}
 		}
 	} else {
+		// Dir path of working dir.
+		if err := c.AddPath(gfile.Pwd()); err != nil {
+			intlog.Error(err)
+		}
+
 		// Dir path of main package.
 		if mainPath := gfile.MainPkgPath(); mainPath != "" && gfile.Exists(mainPath) {
-			_ = c.AddPath(mainPath)
+			if err := c.AddPath(mainPath); err != nil {
+				intlog.Error(err)
+			}
 		}
+
 		// Dir path of binary.
 		if selfPath := gfile.SelfDir(); selfPath != "" && gfile.Exists(selfPath) {
-			_ = c.AddPath(selfPath)
+			if err := c.AddPath(selfPath); err != nil {
+				intlog.Error(err)
+			}
 		}
-		// Dir path of working dir.
-		_ = c.AddPath(gfile.Pwd())
 	}
 	return c
-}
-
-func (c *Config) getSearchPaths() []string {
-	var (
-		searchPaths = c.searchPaths.Slice()
-		mainPkgPath = gfile.MainPkgPath()
-	)
-	if mainPkgPath != "" {
-		if !gstr.InArray(searchPaths, mainPkgPath) {
-			searchPaths = append([]string{mainPkgPath}, searchPaths...)
-		}
-	}
-	return searchPaths
 }
 
 // filePath returns the absolute configuration file path for the given filename by <file>.
@@ -107,20 +102,21 @@ func (c *Config) filePath(file ...string) (path string) {
 	path = c.FilePath(name)
 	if path == "" {
 		var (
-			searchPaths = c.getSearchPaths()
-			buffer      = bytes.NewBuffer(nil)
+			buffer = bytes.NewBuffer(nil)
 		)
-
-		if len(searchPaths) > 0 {
+		if c.searchPaths.Len() > 0 {
 			buffer.WriteString(fmt.Sprintf("[gcfg] cannot find config file \"%s\" in following paths:", name))
-			index := 1
-			for _, v := range searchPaths {
-				v = gstr.TrimRight(v, `\/`)
-				buffer.WriteString(fmt.Sprintf("\n%d. %s", index, v))
-				index++
-				buffer.WriteString(fmt.Sprintf("\n%d. %s", index, v+gfile.Separator+"config"))
-				index++
-			}
+			c.searchPaths.RLockFunc(func(array []string) {
+				index := 1
+				for _, v := range array {
+					v = gstr.TrimRight(v, `\/`)
+					buffer.WriteString(fmt.Sprintf("\n%d. %s", index, v))
+					index++
+					buffer.WriteString(fmt.Sprintf("\n%d. %s", index, v+gfile.Separator+"config"))
+					index++
+				}
+			})
+
 		} else {
 			buffer.WriteString(fmt.Sprintf("[gcfg] cannot find config file \"%s\" with no path set/add", name))
 		}
@@ -281,7 +277,6 @@ func (c *Config) FilePath(file ...string) (path string) {
 	if len(file) > 0 {
 		name = file[0]
 	}
-	searchPaths := c.getSearchPaths()
 	// Searching resource manager.
 	if !gres.IsEmpty() {
 		for _, v := range resourceTryFiles {
@@ -290,25 +285,29 @@ func (c *Config) FilePath(file ...string) (path string) {
 				return
 			}
 		}
-		for _, prefix := range searchPaths {
-			for _, v := range resourceTryFiles {
-				if file := gres.Get(prefix + v + name); file != nil {
-					path = file.Name()
-					return
+		c.searchPaths.RLockFunc(func(array []string) {
+			for _, prefix := range array {
+				for _, v := range resourceTryFiles {
+					if file := gres.Get(prefix + v + name); file != nil {
+						path = file.Name()
+						return
+					}
 				}
 			}
-		}
+		})
 	}
 	// Searching the file system.
-	for _, prefix := range searchPaths {
-		prefix = gstr.TrimRight(prefix, `\/`)
-		if path, _ = gspath.Search(prefix, name); path != "" {
-			return
+	c.searchPaths.RLockFunc(func(array []string) {
+		for _, prefix := range array {
+			prefix = gstr.TrimRight(prefix, `\/`)
+			if path, _ = gspath.Search(prefix, name); path != "" {
+				return
+			}
+			if path, _ = gspath.Search(prefix+gfile.Separator+"config", name); path != "" {
+				return
+			}
 		}
-		if path, _ = gspath.Search(prefix+gfile.Separator+"config", name); path != "" {
-			return
-		}
-	}
+	})
 	return
 }
 
@@ -392,13 +391,12 @@ func (c *Config) getJson(file ...string) *gjson.Json {
 				}
 			}
 			return j
-		} else {
-			if errorPrint() {
-				if filePath != "" {
-					glog.Criticalf(`[gcfg] Load config file "%s" failed: %s`, filePath, err.Error())
-				} else {
-					glog.Criticalf(`[gcfg] Load configuration failed: %s`, err.Error())
-				}
+		}
+		if errorPrint() {
+			if filePath != "" {
+				glog.Criticalf(`[gcfg] Load config file "%s" failed: %s`, filePath, err.Error())
+			} else {
+				glog.Criticalf(`[gcfg] Load configuration failed: %s`, err.Error())
 			}
 		}
 		return nil

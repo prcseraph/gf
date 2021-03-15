@@ -14,13 +14,28 @@ import (
 
 // Structs converts any slice to given struct slice.
 func Structs(params interface{}, pointer interface{}, mapping ...map[string]string) (err error) {
-	return doStructs(params, pointer, mapping...)
+	var keyToAttributeNameMapping map[string]string
+	if len(mapping) > 0 {
+		keyToAttributeNameMapping = mapping[0]
+	}
+	return doStructs(params, pointer, keyToAttributeNameMapping, "")
+}
+
+// StructsTag acts as Structs but also with support for priority tag feature, which retrieves the
+// specified tags for `params` key-value items to struct attribute names mapping.
+// The parameter `priorityTag` supports multiple tags that can be joined with char ','.
+func StructsTag(params interface{}, pointer interface{}, priorityTag string) (err error) {
+	return doStructs(params, pointer, nil, priorityTag)
 }
 
 // StructsDeep converts any slice to given struct slice recursively.
 // Deprecated, use Structs instead.
 func StructsDeep(params interface{}, pointer interface{}, mapping ...map[string]string) (err error) {
-	return doStructs(params, pointer, mapping...)
+	var keyToAttributeNameMapping map[string]string
+	if len(mapping) > 0 {
+		keyToAttributeNameMapping = mapping[0]
+	}
+	return doStructs(params, pointer, keyToAttributeNameMapping, "")
 }
 
 // doStructs converts any slice to given struct slice.
@@ -30,7 +45,7 @@ func StructsDeep(params interface{}, pointer interface{}, mapping ...map[string]
 // The parameter <pointer> should be type of pointer to slice of struct.
 // Note that if <pointer> is a pointer to another pointer of type of slice of struct,
 // it will create the struct/pointer internally.
-func doStructs(params interface{}, pointer interface{}, mapping ...map[string]string) (err error) {
+func doStructs(params interface{}, pointer interface{}, mapping map[string]string, priorityTag string) (err error) {
 	if params == nil {
 		// If <params> is nil, no conversion.
 		return nil
@@ -91,27 +106,44 @@ func doStructs(params interface{}, pointer interface{}, mapping ...map[string]st
 		return nil
 	}
 	var (
-		array    = reflect.MakeSlice(pointerRv.Type().Elem(), len(paramsMaps), len(paramsMaps))
-		itemType = array.Index(0).Type()
+		reflectElemArray = reflect.MakeSlice(pointerRv.Type().Elem(), len(paramsMaps), len(paramsMaps))
+		itemType         = reflectElemArray.Index(0).Type()
+		itemTypeKind     = itemType.Kind()
+		pointerRvElem    = pointerRv.Elem()
+		pointerRvLength  = pointerRvElem.Len()
 	)
-	for i := 0; i < len(paramsMaps); i++ {
-		if itemType.Kind() == reflect.Ptr {
-			// Slice element is type pointer.
-			e := reflect.New(itemType.Elem()).Elem()
-			if err = Struct(paramsMaps[i], e, mapping...); err != nil {
+	if itemTypeKind == reflect.Ptr {
+		// Pointer element.
+		for i := 0; i < len(paramsMaps); i++ {
+			var tempReflectValue reflect.Value
+			if i < pointerRvLength {
+				// Might be nil.
+				tempReflectValue = pointerRvElem.Index(i).Elem()
+			}
+			if !tempReflectValue.IsValid() {
+				tempReflectValue = reflect.New(itemType.Elem()).Elem()
+			}
+			if err = doStruct(paramsMaps[i], tempReflectValue, mapping, priorityTag); err != nil {
 				return err
 			}
-			array.Index(i).Set(e.Addr())
-		} else {
-			// Slice element is not type of pointer.
-			e := reflect.New(itemType).Elem()
-			if err = Struct(paramsMaps[i], e, mapping...); err != nil {
+			reflectElemArray.Index(i).Set(tempReflectValue.Addr())
+		}
+	} else {
+		// Struct element.
+		for i := 0; i < len(paramsMaps); i++ {
+			var tempReflectValue reflect.Value
+			if i < pointerRvLength {
+				tempReflectValue = pointerRvElem.Index(i)
+			} else {
+				tempReflectValue = reflect.New(itemType).Elem()
+			}
+			if err = doStruct(paramsMaps[i], tempReflectValue, mapping, priorityTag); err != nil {
 				return err
 			}
-			array.Index(i).Set(e)
+			reflectElemArray.Index(i).Set(tempReflectValue)
 		}
 	}
-	pointerRv.Elem().Set(array)
+	pointerRv.Elem().Set(reflectElemArray)
 	return nil
 }
 
