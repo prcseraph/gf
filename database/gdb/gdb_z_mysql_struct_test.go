@@ -8,7 +8,6 @@ package gdb_test
 
 import (
 	"database/sql"
-	"github.com/gogf/gf/database/gdb"
 	"github.com/gogf/gf/frame/g"
 	"github.com/gogf/gf/os/gtime"
 	"github.com/gogf/gf/test/gtest"
@@ -363,6 +362,30 @@ func Test_Model_Scan_CustomType_Time(t *testing.T) {
 	})
 }
 
+func Test_Model_Scan_CustomType_String(t *testing.T) {
+	type MyString string
+
+	type MyStringSt struct {
+		Passport MyString
+	}
+
+	table := createInitTable()
+	defer dropTable(table)
+	gtest.C(t, func(t *gtest.T) {
+		st := new(MyStringSt)
+		err := db.Model(table).Fields("Passport").WherePri(1).Scan(st)
+		t.AssertNil(err)
+		t.Assert(st.Passport, "user_1")
+	})
+	gtest.C(t, func(t *gtest.T) {
+		var sts []MyStringSt
+		err := db.Model(table).Fields("Passport").Order("id asc").Scan(&sts)
+		t.AssertNil(err)
+		t.Assert(len(sts), TableSize)
+		t.Assert(sts[0].Passport, "user_1")
+	})
+}
+
 type User struct {
 	Id         int
 	Passport   string
@@ -374,11 +397,11 @@ type User struct {
 func (user *User) UnmarshalValue(value interface{}) error {
 	switch result := value.(type) {
 	case map[string]interface{}:
-		user.Id = result["id"].(gdb.Value).Int()
-		user.Passport = result["passport"].(gdb.Value).String()
+		user.Id = result["id"].(int)
+		user.Passport = result["passport"].(string)
 		user.Password = ""
-		user.Nickname = result["nickname"].(gdb.Value).String()
-		user.CreateTime = result["create_time"].(gdb.Value).GTime()
+		user.Nickname = result["nickname"].(string)
+		user.CreateTime = gtime.New(result["create_time"])
 		return nil
 	default:
 		return gconv.Struct(value, user)

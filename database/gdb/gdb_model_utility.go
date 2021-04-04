@@ -28,9 +28,31 @@ func (m *Model) getModel() *Model {
 	}
 }
 
+// TableFields retrieves and returns the fields information of specified table of current
+// schema.
+//
+// Also see DriverMysql.TableFields.
+func (m *Model) TableFields(table string, schema ...string) (fields map[string]*TableField, err error) {
+	var (
+		link Link
+	)
+	if m.tx != nil {
+		link = m.tx.tx
+	} else {
+		link, err = m.db.GetSlave(schema...)
+		if err != nil {
+			return
+		}
+	}
+	return m.db.TableFields(link, table, schema...)
+}
+
 // mappingAndFilterToTableFields mappings and changes given field name to really table field name.
-func (m *Model) mappingAndFilterToTableFields(fields []string) []string {
-	fieldsMap, err := m.db.TableFields(m.tables)
+// Eg:
+// ID        -> id
+// NICK_Name -> nickname
+func (m *Model) mappingAndFilterToTableFields(fields []string, filter bool) []string {
+	fieldsMap, err := m.TableFields(m.tables)
 	if err != nil || len(fieldsMap) == 0 {
 		return fields
 	}
@@ -52,6 +74,8 @@ func (m *Model) mappingAndFilterToTableFields(fields []string) []string {
 				// Eg: id, name
 				if foundKey, _ := gutil.MapPossibleItemByKey(fieldsKeyMap, field); foundKey != "" {
 					outputFieldsArray = append(outputFieldsArray, foundKey)
+				} else if !filter {
+					outputFieldsArray = append(outputFieldsArray, field)
 				}
 			}
 		} else {
@@ -183,7 +207,7 @@ func (m *Model) getLink(master bool) Link {
 // "user", "user u", "user as u, user_detail as ud".
 func (m *Model) getPrimaryKey() string {
 	table := gstr.SplitAndTrim(m.tables, " ")[0]
-	tableFields, err := m.db.TableFields(table)
+	tableFields, err := m.TableFields(table)
 	if err != nil {
 		return ""
 	}

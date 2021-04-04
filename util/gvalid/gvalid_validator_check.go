@@ -16,17 +16,23 @@ import (
 	"github.com/gogf/gf/util/gconv"
 	"strconv"
 	"strings"
+	"time"
 )
+
+type apiTime interface {
+	Date() (year int, month time.Month, day int)
+	IsZero() bool
+}
 
 // Check checks single value with specified rules.
 // It returns nil if successful validation.
 //
-// The parameter <value> can be any type of variable, which will be converted to string
+// The parameter `value` can be any type of variable, which will be converted to string
 // for validation.
-// The parameter <rules> can be one or more rules, multiple rules joined using char '|'.
-// The parameter <messages> specifies the custom error messages, which can be type of:
+// The parameter `rules` can be one or more rules, multiple rules joined using char '|'.
+// The parameter `messages` specifies the custom error messages, which can be type of:
 // string/map/struct/*struct.
-// The optional parameter <params> specifies the extra validation parameters for some rules
+// The optional parameter `params` specifies the extra validation parameters for some rules
 // like: required-*、same、different, etc.
 func (v *Validator) Check(value interface{}, rules string, messages interface{}, params ...interface{}) *Error {
 	return v.doCheck("", value, rules, messages, params...)
@@ -196,6 +202,10 @@ func (v *Validator) doCheckBuildInRules(
 
 	// Date rules.
 	case "date":
+		// support for time value, eg: gtime.Time/*gtime.Time, time.Time/*time.Time.
+		if v, ok := value.(apiTime); ok {
+			return !v.IsZero(), nil
+		}
 		// Standard date string, which must contain char '-' or '.'.
 		if _, err := gtime.StrToTime(valueStr); err == nil {
 			match = true
@@ -209,6 +219,10 @@ func (v *Validator) doCheckBuildInRules(
 
 	// Date rule with specified format.
 	case "date-format":
+		// support for time value, eg: gtime.Time/*gtime.Time, time.Time/*time.Time.
+		if v, ok := value.(apiTime); ok {
+			return !v.IsZero(), nil
+		}
 		if _, err := gtime.StrToTimeFormat(valueStr, rulePattern); err == nil {
 			match = true
 		} else {
