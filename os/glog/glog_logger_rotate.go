@@ -113,7 +113,7 @@ func (l *Logger) rotateChecksTimely() {
 	var (
 		now      = time.Now()
 		pattern  = "*.log, *.gz"
-		files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
+		files, _ = gfile.ScanDirFile(l.config.Path, pattern, false)
 	)
 	intlog.Printf("logging rotation start checks: %+v", files)
 	// =============================================================
@@ -137,14 +137,19 @@ func (l *Logger) rotateChecksTimely() {
 					`%v - %v = %v > %v, rotation expire logging file: %s`,
 					now, mtime, subDuration, l.config.RotateExpire, file,
 				)
-				if err := l.doRotateFile(file); err != nil {
-					intlog.Error(err)
-				}
+				// -
+				//if err := l.doRotateFile(file); err != nil {
+				//	intlog.Error(err)
+				//}
+				// 2021-03-17
+				_ = gfile.Remove(file)
+				// $
+
 			}
 		}
 		if expireRotated {
 			// Update the files array.
-			files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
+			files, _ = gfile.ScanDirFile(l.config.Path, pattern, false)
 		}
 	}
 
@@ -178,7 +183,7 @@ func (l *Logger) rotateChecksTimely() {
 				return true
 			})
 			// Update the files array.
-			files, _ = gfile.ScanDirFile(l.config.Path, pattern, true)
+			files, _ = gfile.ScanDirFile(l.config.Path, pattern, false)
 		}
 	}
 
